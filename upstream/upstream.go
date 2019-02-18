@@ -73,6 +73,13 @@ func seedResources() {
 	}
 }
 
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
 func resourceIndexHandler(c *routing.Context) error {
 	c.SetContentType("application/json")
 
@@ -80,7 +87,16 @@ func resourceIndexHandler(c *routing.Context) error {
 		return err
 	}
 
-	jsBytes, _ := json.Marshal(resources)
+	limit := c.QueryArgs().GetUintOrZero("limit")
+	if limit == 0 {
+		limit = 10
+	}
+	subset := make(map[int]resource)
+	for i := 0; i < min(limit, len(resources)); i++ {
+		subset[i] = resources[i]
+	}
+
+	jsBytes, _ := json.Marshal(subset)
 
 	fmt.Fprint(c, string(jsBytes))
 
