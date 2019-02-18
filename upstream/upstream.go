@@ -1,12 +1,15 @@
 package upstream
 
 import (
+	"encoding/json"
 	"fmt"
 	"github.com/labstack/gommon/bytes"
 	"github.com/qiangxue/fasthttp-routing"
 	"github.com/sirupsen/logrus"
 	"github.com/valyala/fasthttp"
 	"math/rand"
+	"net/http"
+	"strconv"
 	"time"
 )
 
@@ -35,6 +38,13 @@ const (
 </slideshow>`
 )
 
+type resource struct {
+	Id int
+	Name string
+}
+
+var resources map[int]resource
+
 func Serve(addr string) error {
 
 	logrus.Infof("starting server on %s", addr)
@@ -47,7 +57,72 @@ func Serve(addr string) error {
 	r.Post("/soap", soapHandler)
 	r.Any("/size/<size>", sizeHandler)
 
+	seedResources()
+	orchestrate := r.Group("/resource")
+	orchestrate.Get("", resourceIndexHandler)
+	orchestrate.Get("/", resourceIndexHandler)
+	orchestrate.Get("/<id>", resourceShowHandler)
+
 	return fasthttp.ListenAndServe(addr, r.HandleRequest)
+}
+
+func seedResources() {
+	resources = make(map[int]resource, 100)
+	for i := 0; i < 100; i++ {
+		resources[i] = resource{Id: i, Name: randStringBytesMaskImprSrc(10, rand.NewSource(time.Now().UnixNano()))}
+	}
+}
+
+func resourceIndexHandler(c *routing.Context) error {
+	c.SetContentType("application/json")
+
+	if err := applyDelay(c); err != nil {
+		return err
+	}
+
+	jsBytes, _ := json.Marshal(resources)
+
+	fmt.Fprint(c, string(jsBytes))
+
+	return nil
+}
+
+func resourceShowHandler(c *routing.Context) error {
+	c.SetContentType("application/json")
+
+	if err := applyDelay(c); err != nil {
+		return err
+	}
+
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		return err
+	}
+	res, ok := resources[id]
+	if !ok {
+		c.SetStatusCode(http.StatusNotFound)
+		fmt.Fprint(c, "Not Found")
+		return nil
+	}
+
+	jsBytes, _ := json.Marshal(res)
+
+	fmt.Fprint(c, string(jsBytes))
+
+	return nil
+}
+
+func applyDelay(c *routing.Context) error {
+	delay := string(c.RequestCtx.Request.Header.Peek("X-Delay"))
+	if delay != "" {
+		duration, err := time.ParseDuration(delay)
+		if err != nil {
+			return err
+		}
+		time.Sleep(duration)
+	}
+
+	return nil
 }
 
 // Parse parses human readable bytes string to bytes integer.
@@ -58,13 +133,8 @@ func sizeHandler(c *routing.Context) error {
 		return err
 	}
 
-	delay := string(c.RequestCtx.Request.Header.Peek("X-Delay"))
-	if delay != "" {
-		duration, err := time.ParseDuration(delay)
-		if err != nil {
-			return err
-		}
-		time.Sleep(duration)
+	if err := applyDelay(c); err != nil {
+		return err
 	}
 
 	// not thread safe, so getting new src each time
