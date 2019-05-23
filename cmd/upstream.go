@@ -16,33 +16,34 @@ package cmd
 
 import (
 	"fmt"
-	"github.com/asoorm/go-bench-suite/upstream"
-	"github.com/prometheus/common/log"
 
+	"github.com/asoorm/go-bench-suite/upstream"
+
+	"github.com/prometheus/common/log"
 	"github.com/spf13/cobra"
 )
 
-// upstreamCmd represents the upstream command
+var listenAddr, tlsCertFile, tlsKeyFile string
+
 var upstreamCmd = &cobra.Command{
 	Use:   "upstream",
-	Short: "A brief description of your command",
-	Long: `A longer description that spans multiple lines and likely contains examples
-and usage of using your command. For example:
-
-Cobra is a CLI library for Go that empowers applications.
-This application is a tool to generate the needed files
-to quickly create a Cobra application.`,
+	Short: "Starts a mock upstream server",
+	Long:  `Starts a mock upstream server.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println("upstream called")
 
-		log.Fatal(upstream.Serve(listenAddr))
+		if tlsCertFile != "" && tlsKeyFile != "" {
+			log.Fatal(upstream.ServeTLS(listenAddr, tlsCertFile, tlsKeyFile))
+		} else {
+			log.Fatal(upstream.Serve(listenAddr))
+		}
 	},
 }
-
-var listenAddr string
 
 func init() {
 	rootCmd.AddCommand(upstreamCmd)
 
-	upstreamCmd.PersistentFlags().StringVar(&listenAddr, "addr", ":8081", "Listen address for the server")
+	upstreamCmd.PersistentFlags().StringVar(&listenAddr, "addr", ":8000", "Listen address for the server")
+	upstreamCmd.PersistentFlags().StringVar(&tlsCertFile, "tlsCert", "", "Location of TLS cert file")
+	upstreamCmd.PersistentFlags().StringVar(&tlsKeyFile, "tlsKey", "", "Location of TLS key file")
 }
