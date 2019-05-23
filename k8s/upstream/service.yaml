@@ -16,8 +16,8 @@ metadata:
     run: upstream
 spec:
   ports:
-  - port: 8081
-    targetPort: 8081
+  - port: 8000
+    targetPort: 8000
     protocol: TCP
   selector:
     app: upstream
