@@ -3,7 +3,7 @@ Go Bench Suite
 
 Toolkit for benchmarking & testing proxies against a mock upstream server.
 
-## API
+## API Upstream Examples
 
 Return response in 5s
 ```
@@ -27,10 +27,10 @@ GET /size/1MB
 GET /size/1KB
 
 # send 5KB, return 10KB
-curl -X POST -d "$(curl -X GET localhost:8081/size/5KB)" localhost:8081/size/10KB
+curl -X POST -d "$(curl -X GET localhost:8000/size/5KB)" localhost:8000/size/10KB
 
 # simulate upstream latency with a delay
-curl -X GET -H 'X-Delay 100ms' localhost:8081/size/10KB
+curl -X GET -H 'X-Delay 100ms' localhost:8000/size/10KB
 ``` 
 
 Return Soap response
@@ -47,12 +47,18 @@ go install && go-bench-suite upstream
 go install && go-bench-suite upstream --addr 127.0.0.1:8000
 ```
 
+## Native + TLS
+
+```
+go install && go-bench-suite upstream --addr 127.0.0.1:8443 --certFile ./certs/foo.com.cert.pem --keyFile ./certs/foo.com.key.pem
+```
+
 ## Docker
 
 ```
 docker network create bench
 docker run --rm -itd --name bench --network bench mangomm/go-bench-suite ./go-bench-suite upstream
-docker run --rm -it --network bench rcmorano/docker-hey -z 30s http://bench:8081/size/10B
+docker run --rm -it --network bench rcmorano/docker-hey -z 30s http://bench:8000/size/10B
 ```
 
 ## Kubernetes
@@ -75,17 +81,17 @@ Check it's working
 ```
 # terminal 1
 
-$ kubectl port-forward --namespace upstream svc/upstream 8081:8081
+$ kubectl port-forward --namespace upstream svc/upstream 8000:8000
 
-Forwarding from 127.0.0.1:8081 -> 8081
-Forwarding from [::1]:8081 -> 8081
-Handling connection for 8081
+Forwarding from 127.0.0.1:8000 -> 8000
+Forwarding from [::1]:8000 -> 8000
+Handling connection for 8000
 ```
 
 ```
 # terminal 2
 
-$ curl localhost:8081/size/10B -i
+$ curl localhost:8000/size/10B -i
 
 HTTP/1.1 200 OK
 Server: fasthttp

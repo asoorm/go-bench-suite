@@ -3,14 +3,15 @@ package upstream
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/labstack/gommon/bytes"
-	"github.com/qiangxue/fasthttp-routing"
-	"github.com/sirupsen/logrus"
-	"github.com/valyala/fasthttp"
 	"math/rand"
 	"net/http"
 	"strconv"
 	"time"
+
+	"github.com/labstack/gommon/bytes"
+	routing "github.com/qiangxue/fasthttp-routing"
+	"github.com/sirupsen/logrus"
+	"github.com/valyala/fasthttp"
 )
 
 const (
@@ -39,18 +40,30 @@ const (
 )
 
 type resource struct {
-	Id int
+	Id   int
 	Name string
 }
 
 var resources map[int]resource
 
 func Serve(addr string) error {
-
 	logrus.Infof("starting server on %s", addr)
 
-	r := routing.New()
+	r := registerRoutes()
 
+	return fasthttp.ListenAndServe(addr, r.HandleRequest)
+}
+
+func ServeTLS(addr, certFile, keyFile string) error {
+	logrus.Infof("starting TLS server on %s", addr)
+
+	r := registerRoutes()
+
+	return fasthttp.ListenAndServeTLS(addr, certFile, keyFile, r.HandleRequest)
+}
+
+func registerRoutes() *routing.Router {
+	r := routing.New()
 	r.Get("/delay/<delay>", fixedDelayResponse)
 	r.Get("/json/<type>", jsonHandler)
 	r.Get("/xml", xmlHandler)
@@ -63,7 +76,7 @@ func Serve(addr string) error {
 	orchestrate.Get("/", resourceIndexHandler)
 	orchestrate.Get("/<id>", resourceShowHandler)
 
-	return fasthttp.ListenAndServe(addr, r.HandleRequest)
+	return r
 }
 
 func seedResources() {
