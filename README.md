@@ -68,6 +68,20 @@ Content-Length: 64
 {time": "2019-06-01 19:04:53.364517 +0100 BST m=+263.653200176"}
 ```
 
+We can also simulate upstream latency by forcing a synthetic delay using `X-Delay: {delay}` in the request header.
+
+```bash
+date && curl localhost:8000/json/valid -H 'X-Delay: 2s' -i && date
+HTTP/1.1 200 OK
+Server: fasthttp
+Date: Sat, 01 Jun 2019 18:04:32 GMT
+Content-Type: text/plain; charset=utf-8
+Content-Length: 65
+
+{"time": "2019-06-01 19:04:32.592929 +0100 BST m=+242.881838180"}
+Sat Jun  1 19:15:47 BST 2019
+```
+
 ### `GET /xml`
 
 Returns an XML response body
@@ -163,6 +177,18 @@ Returns a particular resource by it's id
 curl http://localhost:8095/resource/3 -H 'X-Delay: 3s'
 {"Id":3,"Name":"prDmIjElNj"}%
 ```
+
+## Chaos & Mocking a SLOW response
+
+It is possible to introduce a delay from any endpoint by setting `X-Delay` header in the http request.
+But let's assume that we don't want the response to be slow / delayed ALL the time. We can also set an `X-Delay-Percent`
+header in the request, which takes an integer percentage value.
+
+Examples:
+
+`curl http://localhost:8095/resource/3 -H 'X-Delay: 3s'` returns response in ~3s ALL the time
+`curl http://localhost:8095/resource/3 -H 'X-Delay: 3s' -H 'X-Delay-Percent: 100'` returns response in ~3s ALL the time
+`curl http://localhost:8095/resource/3 -H 'X-Delay: 3s' -H 'X-Delay-Percent: 5'` returns response in ~3s 5% of the time, otherwise, response is immediate.
 
 ## Installation
 
