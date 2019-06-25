@@ -143,11 +143,26 @@ func resourceShowHandler(c *routing.Context) error {
 
 func applyDelay(c *routing.Context) error {
 	delay := string(c.RequestCtx.Request.Header.Peek("X-Delay"))
-	if delay != "" {
-		duration, err := time.ParseDuration(delay)
-		if err != nil {
-			return err
-		}
+	percentStr := string(c.RequestCtx.Request.Header.Peek("X-Delay-Percent"))
+
+	if delay == "" {
+		return nil
+	}
+
+	duration, err := time.ParseDuration(delay)
+	if err != nil {
+		return err
+	}
+
+	percent := int64(100)
+	percent, err = strconv.ParseInt(percentStr, 10, 0)
+	if err != nil {
+		percent = 100
+	}
+
+	r := rand.Int63n(100)
+
+	if percent > r {
 		time.Sleep(duration)
 	}
 
@@ -185,6 +200,11 @@ func fixedDelayResponse(c *routing.Context) error {
 }
 
 func jsonHandler(c *routing.Context) error {
+
+	if err := applyDelay(c); err != nil {
+		return err
+	}
+
 	switch c.Param("type") {
 	case "invalid":
 		fmt.Fprintf(c, `{time": "%s"}`, time.Now().String())
