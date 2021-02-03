@@ -3,15 +3,16 @@ package upstream
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"math/rand"
 	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/labstack/gommon/bytes"
-	routing "github.com/qiangxue/fasthttp-routing"
 	"github.com/sirupsen/logrus"
 	"github.com/valyala/fasthttp"
+	"github.com/valyala/fasthttprouter"
 )
 
 const (
@@ -51,7 +52,7 @@ func Serve(addr string) error {
 
 	r := registerRoutes()
 
-	return fasthttp.ListenAndServe(addr, r.HandleRequest)
+	return fasthttp.ListenAndServe(addr, r.Handler)
 }
 
 func ServeTLS(addr, certFile, keyFile string) error {
@@ -59,22 +60,31 @@ func ServeTLS(addr, certFile, keyFile string) error {
 
 	r := registerRoutes()
 
-	return fasthttp.ListenAndServeTLS(addr, certFile, keyFile, r.HandleRequest)
+	return fasthttp.ListenAndServeTLS(addr, certFile, keyFile, r.Handler)
 }
 
-func registerRoutes() *routing.Router {
-	r := routing.New()
-	r.Get("/delay/<delay>", fixedDelayResponse)
-	r.Get("/json/<type>", jsonHandler)
-	r.Get("/xml", xmlHandler)
-	r.Post("/soap", soapHandler)
-	r.Any("/size/<size>", sizeHandler)
+func registerRoutes() *fasthttprouter.Router {
+	r := fasthttprouter.New()
+
+	r.GET("/delay/:delay", fixedDelayResponse)
+	r.GET("/json/:type", jsonHandler)
+
+	log.Printf("GET /json")
+	log.Printf("\tPATH /valid\treturns a valid json response\n")
+	log.Printf("\tPATH /invalid\t returns an invalid json response\n")
+	log.Printf("\tHEADER X-Delay: 200ms")
+	log.Printf("\t\t-> responds in 200ms")
+	log.Printf("\tHEADER X-Delay: 100ms, X-Slowdown: 300ms, X-Slowdown-From: 2006-01-02T15:04:05Z07:00\n")
+	log.Printf("\t\t-> responds in 200ms, from %s applies a further 300ms slowdown (time.RFC3339)",
+		time.Now().Add(time.Minute).Format(time.RFC3339))
+
+	r.GET("/xml", xmlHandler)
+	r.POST("/soap", soapHandler)
+	r.GET("/size/:size", sizeHandler)
 
 	seedResources()
-	orchestrate := r.Group("/resource")
-	orchestrate.Get("", resourceIndexHandler)
-	orchestrate.Get("/", resourceIndexHandler)
-	orchestrate.Get("/<id>", resourceShowHandler)
+	r.GET("/resource", resourceIndexHandler)
+	r.GET("/resource/:id", resourceShowHandler)
 
 	return r
 }
@@ -93,11 +103,11 @@ func min(a, b int) int {
 	return b
 }
 
-func resourceIndexHandler(c *routing.Context) error {
+func resourceIndexHandler(c *fasthttp.RequestCtx, _ fasthttprouter.Params) {
 	c.SetContentType("application/json")
 
-	if err := applyDelay(c); err != nil {
-		return err
+	if err := applyDelay(c, nil); err != nil {
+		return
 	}
 
 	limit := c.QueryArgs().GetUintOrZero("limit")
@@ -113,37 +123,37 @@ func resourceIndexHandler(c *routing.Context) error {
 
 	fmt.Fprint(c, string(jsBytes))
 
-	return nil
+	return
 }
 
-func resourceShowHandler(c *routing.Context) error {
+func resourceShowHandler(c *fasthttp.RequestCtx, p fasthttprouter.Params) {
 	c.SetContentType("application/json")
 
-	if err := applyDelay(c); err != nil {
-		return err
+	if err := applyDelay(c, nil); err != nil {
+		return
 	}
 
-	id, err := strconv.Atoi(c.Param("id"))
+	id, err := strconv.Atoi(p.ByName("id"))
 	if err != nil {
-		return err
+		return
 	}
 	res, ok := resources[id]
 	if !ok {
 		c.SetStatusCode(http.StatusNotFound)
 		fmt.Fprint(c, "Not Found")
-		return nil
+		return
 	}
 
 	jsBytes, _ := json.Marshal(res)
 
 	fmt.Fprint(c, string(jsBytes))
 
-	return nil
+	return
 }
 
-func applyDelay(c *routing.Context) error {
-	delay := string(c.RequestCtx.Request.Header.Peek("X-Delay"))
-	percentStr := string(c.RequestCtx.Request.Header.Peek("X-Delay-Percent"))
+func applyDelay(c *fasthttp.RequestCtx, _ fasthttprouter.Params) error {
+	delay := string(c.Request.Header.Peek("X-Delay"))
+	percentStr := string(c.Request.Header.Peek("X-Delay-Percent"))
 
 	if delay == "" {
 		return nil
@@ -169,64 +179,99 @@ func applyDelay(c *routing.Context) error {
 	return nil
 }
 
-// Parse parses human readable bytes string to bytes integer.
-// For example, 6GB (6G is also valid) will return 6442450944.
-func sizeHandler(c *routing.Context) error {
-	size, err := bytes.Parse(c.Param("size"))
+var (
+	start = time.Now()
+)
+
+func applySlowdown(c *fasthttp.RequestCtx, _ fasthttprouter.Params) error {
+	delayHeader := string(c.Request.Header.Peek("X-Slowdown"))
+	fromTimeHeader := string(c.Request.Header.Peek("X-Slowdown-From"))
+
+	if delayHeader == "" {
+		return nil
+	}
+	if fromTimeHeader == "" {
+		return nil
+	}
+
+	from, err := time.Parse(time.RFC3339, fromTimeHeader)
 	if err != nil {
 		return err
 	}
 
-	if err := applyDelay(c); err != nil {
+	delay, err := time.ParseDuration(delayHeader)
+	if err != nil {
 		return err
+	}
+
+	if start.After(from) {
+		time.Sleep(delay)
+	}
+
+	return nil
+}
+
+// Parse parses human readable bytes string to bytes integer.
+// For example, 6GB (6G is also valid) will return 6442450944.
+func sizeHandler(c *fasthttp.RequestCtx, p fasthttprouter.Params) {
+	size, err := bytes.Parse(p.ByName("size"))
+	if err != nil {
+		return
+	}
+
+	if err := applyDelay(c, nil); err != nil {
+		return
 	}
 
 	// not thread safe, so getting new src each time
 	src := rand.NewSource(time.Now().UnixNano())
 	fmt.Fprint(c, randStringBytesMaskImprSrc(int(size), src))
-
-	return nil
 }
 
-func fixedDelayResponse(c *routing.Context) error {
-	duration, err := time.ParseDuration(c.Param("delay"))
+func fixedDelayResponse(c *fasthttp.RequestCtx, p fasthttprouter.Params) {
+	duration, err := time.ParseDuration(p.ByName("delay"))
 	if err != nil {
-		return err
+		// handle error
+		return
 	}
 
 	time.Sleep(duration)
 
-	return nil
+	return
 }
 
-func jsonHandler(c *routing.Context) error {
+func jsonHandler(c *fasthttp.RequestCtx, p fasthttprouter.Params) {
 
-	if err := applyDelay(c); err != nil {
-		return err
+	if err := applyDelay(c, nil); err != nil {
+		return
 	}
 
-	switch c.Param("type") {
+	if err := applySlowdown(c, nil); err != nil {
+		return
+	}
+
+	switch p.ByName("type") {
 	case "invalid":
 		fmt.Fprintf(c, `{time": "%s"}`, time.Now().String())
 	default:
 		fmt.Fprintf(c, `{"time": "%s"}`, time.Now().String())
 	}
 
-	return nil
+	return
 }
 
-func xmlHandler(c *routing.Context) error {
+func xmlHandler(c *fasthttp.RequestCtx, _ fasthttprouter.Params) {
 	c.SetContentType("application/xml")
 
 	fmt.Fprint(c, xml)
 
-	return nil
+	return
 }
 
-func soapHandler(c *routing.Context) error {
+func soapHandler(_ *fasthttp.RequestCtx, _ fasthttprouter.Params) {
 	// TODO: SOAP Response
 
-	return nil
+	return
 }
 
 func randStringBytesMaskImpr(n int) string {
