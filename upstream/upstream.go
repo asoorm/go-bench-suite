@@ -66,6 +66,8 @@ func ServeTLS(addr, certFile, keyFile string) error {
 func registerRoutes() *fasthttprouter.Router {
 	r := fasthttprouter.New()
 
+	r.GET("/echo", echoResponseHandler)
+	r.POST("/echo", echoResponseHandler)
 	r.GET("/delay/:delay", fixedDelayResponse)
 	r.GET("/json/:type", jsonHandler)
 
@@ -101,6 +103,35 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+type echoResponse struct {
+	Method     string
+	RequestURI string
+	Header     string
+	Headers    map[string][]string
+	Body       string
+	Host       string
+	QueryArgs  string
+}
+
+func echoResponseHandler(c *fasthttp.RequestCtx, _ fasthttprouter.Params) {
+	res := echoResponse{
+		Method:     string(c.Method()),
+		RequestURI: string(c.RequestURI()),
+		Header:     c.Request.Header.String(),
+		Headers:    make(map[string][]string),
+		Body:       string(c.PostBody()),
+		Host:       string(c.Host()),
+		QueryArgs:  c.QueryArgs().String(),
+	}
+	c.Request.Header.VisitAll(func(key, value []byte) {
+		res.Headers[string(key)] = append(res.Headers[string(key)], string(value))
+	})
+
+	if err := json.NewEncoder(c).Encode(res); err != nil {
+		c.Error(err.Error(), fasthttp.StatusInternalServerError)
+	}
 }
 
 func resourceIndexHandler(c *fasthttp.RequestCtx, _ fasthttprouter.Params) {
